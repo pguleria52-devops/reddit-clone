@@ -1,0 +1,114 @@
+stages:
+  - clean
+  - checkout
+  - sonar
+  - quality_gate
+  - dependencies
+  - owasp_fs_scan
+  - trivy_fs_scan
+  - docker_build_push
+  - trivy_image_scan
+  - deploy_container
+  - deploy_kubernetes
+
+variables:
+  SONAR_PROJECT_KEY: "Reddit"
+  SONAR_PROJECT_NAME: "Reddit"
+  DOCKER_IMAGE: "pguleria/reddit:latest"
+
+clean_workspace:
+  stage: clean
+  script: 
+    - rm -rf *
+
+checkout:
+  stage: checkout
+  script:
+    - git clone https://$GITHUB_TOKEN@github.com/pguleria52-devops/reddit-clone.git .
+  only:
+   - master
+
+sonar_analysis:
+  stage: sonar
+  script:
+    - sonar-scanner -Dsonar.projectKey=$SONAR_PROJECT_KEY -Dsonar.projectName=$SONAR_PROJECT_NAME
+  only:
+    - master
+
+quality_gate:
+  stage: quality_gate
+  script:
+    - |
+      STATUS="PENDING"
+      while [ "$STATUS" != "OK" ] && [ "$STATUS" != "ERROR" ]; do
+        STATUS=$(curl -s -u $SONAR_TOKEN: "https://sonar-server/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY" | jq -r '.projectStatus.status')
+        echo "Quality Gate status: $STATUS"
+        [ "$STATUS" == "OK" ] && exit 0
+        [ "$STATUS" == "ERROR" ] && exit 1
+        sleep 10
+      done
+  only:
+    - master
+
+install_dependencies:  
+  stage: dependencies
+  image: node:16
+  script:
+   - npm install
+
+owasp_fs_scan:
+  stage: owasp_fs_scan
+  image: node:16
+  script:
+    - dependency-check --scan ./ --disableYarnAudit --disableNodeAudit --out ./
+  artifacts:
+    paths:
+      - dependency-check-report.xml
+
+trivy_fs_scan:
+  stage: trivy_fs_scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy fs . > trivyfs.txt
+  artifacts:
+    paths:
+      - trivyfs.txt
+
+docker_build_push:
+  stage: docker_build_push
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t reddit .
+    - docker tag reddit $DOCKER_IMAGE
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    - docker push $DOCKER_IMAGE
+
+tricy_image_scan:
+ stage: trivy_image_scan
+ image: aquasec/trivy:latest
+ script:    
+    - trivy image $DOCKER_IMAGE > trivy.txt
+ artifacts:
+    paths:
+      - trivy.txt  
+
+deploy_container:
+  stage: deploy_container
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker run -d --name reddit -p 3000:3000 $DOCKER_IMAGE
+
+deploy_kubernetes:
+  stage: deploy_kubernetes
+  image:
+    name: bitnami/kubectl:latest
+    entrypoint: [""]
+  script:
+    - kubectl apply -f deployment.yml
+    - kubectl apply -f service.yml
+    - kubectl apply -f ingress.yml      
+   

@@ -1,0 +1,89 @@
+---
+- name: Install Jenkins, Docker, Trivy, Terraform, kubectl and AWS CLI
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - unzip
+          - openjdk-17-jdk
+        state: present
+
+    #Docker installation
+    - name: Install Docker
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+
+    # Jenkins installation
+    - name: Jenkins installation
+      apt:
+        name: Jenkins
+        state: present
+        update_cache: yes
+
+    # trivy installation
+    - name: Trivy download
+      get_url:
+       url: https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_Linux-64bit.deb
+       dest: /tmp/trivy.deb
+
+    - name: Install Trivy
+      apt:
+       deb: /tmp/trivy.deb
+
+    # Terraform installation
+    - name: Download Terraform
+      get_url:
+        url: https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_linux_amd64.zip
+        dest: /tmp/terraform.zip
+
+    - name: Unzip Terraform
+      unarchive: 
+        src: /tmp/terraform.zip
+        dest: /usr/local/bin
+        remote_src: yes
+        mode: '0755'
+
+    #kubectl installation
+    - name: Download kubectl
+      get_url:
+        url: https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl
+        dest: /usr/local/bin/kubectl
+        mode: '0755'
+
+    # AWS CLI installation
+    - name: Download AWS CLI
+      get_url:
+        url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+        dest: /tmp/awscliv2.zip
+
+    - name: Unzip AWS CLI
+      unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: yes
+
+    - name: Install AWS CLI                                            
+      command: /tmp/aws/install
+      args:
+        creates: /usr/local/bin/aws
