@@ -1,9 +1,11 @@
 ---
 - name: Install Jenkins, Docker, Trivy, Terraform, kubectl and AWS CLI
-  hosts: all
+  hosts: localhost
   become: yes
+  connection: local
 
   tasks:
+    # Update APT cache and install basic packages
     - name: Update apt cache
       apt:
         update_cache: yes
@@ -17,10 +19,13 @@
           - gnupg
           - lsb-release
           - unzip
+          - software-properties-common
           - openjdk-17-jdk
         state: present
 
-    #Docker installation
+    # -----------------------------
+    # Docker Installation
+    # -----------------------------
     - name: Add Docker GPG key
       apt_key:
         url: https://download.docker.com/linux/ubuntu/gpg
@@ -28,14 +33,12 @@
 
     - name: Add Docker repository
       apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release | lower }} stable"
         state: present
 
-    - name: Update apt cache
+    - name: Update apt cache after adding Docker repo
       apt:
         update_cache: yes
-        force_apt_get: yes
-        cache_valid_time: 3600
 
     - name: Install Docker CE
       apt:
@@ -45,46 +48,74 @@
           - containerd.io
         state: present
 
-
-
-    # Jenkins installation
-    - name: Jenkins installation
-      apt:
-        name: Jenkins
+    # -----------------------------
+    # Jenkins Installation
+    # -----------------------------
+    - name: Add Jenkins GPG key
+      apt_key:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io.key
         state: present
+
+    - name: Add Jenkins APT repository
+      apt_repository:
+        repo: "deb https://pkg.jenkins.io/debian-stable binary/"
+        state: present
+
+    - name: Update apt cache after adding Jenkins repo
+      apt:
         update_cache: yes
 
-    # trivy installation
-    - name: Trivy download
+    - name: Install Jenkins
+      apt:
+        name: jenkins
+        state: present
+
+    - name: Ensure Jenkins is running
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+    
+
+    # -----------------------------
+    # Trivy Installation
+    # -----------------------------
+    - name: Download Trivy
       get_url:
-       url: https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_Linux-64bit.deb
-       dest: /tmp/trivy.deb
+        url: https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_Linux-64bit.deb
+        dest: /tmp/trivy.deb
 
     - name: Install Trivy
       apt:
-       deb: /tmp/trivy.deb
+        deb: /tmp/trivy.deb
 
-    # Terraform installation
+    # -----------------------------
+    # Terraform Installation
+    # -----------------------------
     - name: Download Terraform
       get_url:
         url: https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_linux_amd64.zip
         dest: /tmp/terraform.zip
 
-    - name: Unzip Terraform
-      unarchive: 
+    - name: Unzip Terraform binary
+      unarchive:
         src: /tmp/terraform.zip
-        dest: /usr/local/bin
+        dest: /usr/local/bin/
         remote_src: yes
         mode: '0755'
 
-    #kubectl installation
+    # -----------------------------
+    # kubectl Installation
+    # -----------------------------
     - name: Download kubectl
       get_url:
         url: https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl
         dest: /usr/local/bin/kubectl
         mode: '0755'
 
-    # AWS CLI installation
+    # -----------------------------
+    # AWS CLI Installation
+    # -----------------------------
     - name: Download AWS CLI
       get_url:
         url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
@@ -96,7 +127,7 @@
         dest: /tmp
         remote_src: yes
 
-    - name: Install AWS CLI                                            
+    - name: Install AWS CLI
       command: /tmp/aws/install
       args:
         creates: /usr/local/bin/aws
